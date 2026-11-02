@@ -1,0 +1,6 @@
+phone.ip
+phone-speaker/bin/
+phone-speaker/pc/bin/
+phone-speaker/pc/obj/
+phone-speaker/android/build/
+phone-speaker/android/pcaudio.jar
