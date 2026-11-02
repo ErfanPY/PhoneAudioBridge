@@ -10,7 +10,10 @@
 # One-time setup: Settings > System > Sound > Volume mixer > scrcpy > Output = CABLE Input.
 param(
     [switch]$NoMic,      # only send PC sound to the phone
-    [switch]$NoSpeaker   # only bring the phone mic to the PC
+    [switch]$NoSpeaker,  # only bring the phone mic to the PC
+    # Windows defaults applied on launch (name fragments). Pass '' to leave one unchanged.
+    [string]$DefaultOutput = "Realtek Digital Output",
+    [string]$DefaultMic = "CABLE Output"
 )
 
 $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
@@ -90,7 +93,11 @@ function Start-Session($serial) {
             & $adb forward tcp:27200 localabstract:pcaudio | Out-Null
             $procs += Start-Process $adb -PassThru -WindowStyle Hidden -ArgumentList `
                 "shell", "CLASSPATH=/data/local/tmp/pcaudio.jar app_process / PcAudioPlayer"
-            Start-Sleep -Milliseconds 1500  # let the player start listening
+            # Wait until the player's socket exists on the phone (slower to start over Wi-Fi).
+            for ($i = 0; $i -lt 40; $i++) {
+                if ((& $adb shell "grep -c @pcaudio /proc/net/unix" 2>$null | Out-String).Trim() -gt 0) { break }
+                Start-Sleep -Milliseconds 250
+            }
             $procs += Start-Process $sender -PassThru -NoNewWindow
         }
         Write-Host "Connected. Ctrl+C to stop."
@@ -104,6 +111,15 @@ function Start-Session($serial) {
         & $adb shell "pkill -f PcAudioPlayer" 2>$null
         & $adb forward --remove tcp:27200 2>$null
         Remove-Item Env:ANDROID_SERIAL -ErrorAction SilentlyContinue
+    }
+}
+
+# Best effort: a missing device or sender just means that default is left as it is.
+foreach ($name in @($DefaultOutput, $DefaultMic) | Where-Object { $_ }) {
+    if (Test-Path $sender) {
+        $result = (& $sender --set-default $name 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0) { Write-Host $result }
+        else { Write-Host "Could not set default '$name' (device not found?), leaving it as is." }
     }
 }
 
